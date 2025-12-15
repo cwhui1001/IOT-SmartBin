@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Bin Dashboard</title>
+
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap" rel="stylesheet">
+    
+    <!-- FontAwesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <!-- Firebase SDK (Compat) -->
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="login-wrapper" id="login-wrapper">
+    <div class="login-card">
+        <div class="login-header">
+            <i class="fas fa-trash-alt"></i>
+            <h2 id="form-title">Smart Bin Login</h2>
+            <p id="form-subtitle">Welcome back! Please login to your account.</p>
+        </div>
+        
+        <!-- Login Form -->
+        <div id="login-form">
+            <div class="input-group">
+                <i class="fas fa-envelope"></i>
+                <input type="email" id="email" placeholder="Email Address" required>
+            </div>
+            <div class="input-group">
+                <i class="fas fa-lock"></i>
+                <input type="password" id="password" placeholder="Password" required>
+            </div>
+            <button id="login-btn">Login</button>
+            <p class="toggle-text">Don't have an account? <a href="#" id="show-register">Register</a></p>
+        </div>
+
+        <!-- Register Form (Hidden by default) -->
+        <div id="register-form" style="display: none;">
+            <div class="input-group">
+                <i class="fas fa-envelope"></i>
+                <input type="email" id="reg-email" placeholder="Email Address" required>
+            </div>
+            <div class="input-group">
+                <i class="fas fa-lock"></i>
+                <input type="password" id="reg-password" placeholder="Password" required>
+            </div>
+            <div class="input-group">
+                <i class="fas fa-lock"></i>
+                <input type="password" id="reg-confirm-password" placeholder="Confirm Password" required>
+            </div>
+            <button id="register-btn">Register</button>
+            <p class="toggle-text">Already have an account? <a href="#" id="show-login">Login</a></p>
+        </div>
+
+        <p id="auth-error" class="error-message"></p>
+    </div>
+</div>
+
+<div id="dashboard" class="container" style="display:none;">
+    <header>
+        <div class="header-left">
+            <h1><i class="fas fa-trash-alt"></i> Smart Bin Dashboard</h1>
+            <div id="connectionStatus" style="font-size: 0.8rem; color: #aaa;">
+                <i class="fas fa-circle text-success"></i> System Online
+            </div>
+        </div>
+        <button id="logout-btn" class="logout-btn"><i class="fas fa-sign-out-alt"></i> Logout</button>
+    </header>
+
+    <!-- Status Cards -->
+    <div class="dashboard-grid">
+        <!-- Fill Level Card -->
+        <div class="card" style="border-left: 5px solid var(--primary-color);">
+            <div class="card-info">
+                <h3>Fill Level</h3>
+                <span id="fillLevel" class="text-primary">0%</span>
+            </div>
+            <div class="card-icon text-primary">
+                <i class="fas fa-tachometer-alt"></i>
+            </div>
+        </div>
+
+        <!-- Lid Status Card -->
+        <div class="card" style="border-left: 5px solid var(--warning-color);">
+            <div class="card-info">
+                <h3>Lid Status</h3>
+                <span id="lidStatus">CLOSED</span>
+            </div>
+            <div class="card-icon text-warning">
+                <i class="fas fa-door-closed" id="lidIcon"></i>
+            </div>
+        </div>
+
+        <!-- Fire Status Card -->
+        <div class="card" style="border-left: 5px solid var(--danger-color);">
+            <div class="card-info">
+                <h3>Fire Status</h3>
+                <span id="fireStatus" class="text-success">SAFE</span>
+            </div>
+            <div class="card-icon text-danger">
+                <i class="fas fa-fire-extinguisher" id="fireIcon"></i>
+            </div>
+        </div>
+    </div>
+
+    <!-- Chart Section -->
+    <div class="chart-container">
+        <canvas id="fillChart"></canvas>
+    </div>
+
+    <!-- Logs Section -->
+    <div class="table-container">
+        <h2><i class="fas fa-history"></i> Fire Event Log</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Time</th>
+                    <th>Status</th>
+                    <th>Details</th>
+                </tr>
+            </thead>
+            <tbody id="fireLog">
+                <!-- Logs will appear here -->
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<script src="script.js"></script>
+</body>
+</html>
