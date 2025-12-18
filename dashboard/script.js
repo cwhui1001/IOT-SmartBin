@@ -1,8 +1,11 @@
-// ==== Firebase Config ====
+// ==== ThingSpeak Config ====
+const THINGSPEAK_CHANNEL_ID   = "3206972";   
+const THINGSPEAK_READ_API_KEY = "9N4F0E021PUW0LGR"; 
+
+// ==== Firebase Config (For Authentication ONLY) ====
 const firebaseConfig = {
   apiKey: "AIzaSyA9diwq9UcvJwFOCRl_bPlCZTAMclH7TgA",
   authDomain: "smart-bin-management-7fce0.firebaseapp.com",
-  databaseURL: "https://smart-bin-management-7fce0-default-rtdb.asia-southeast1.firebasedatabase.app",
   projectId: "smart-bin-management-7fce0",
   storageBucket: "smart-bin-management-7fce0.firebasestorage.app",
   messagingSenderId: "474334349092",
@@ -12,8 +15,6 @@ const firebaseConfig = {
 
 // Initialize Firebase
 firebase.initializeApp(firebaseConfig);
-const db = firebase.database();
-
 const auth = firebase.auth();
 
 // ==== UI Toggles ====
@@ -54,16 +55,13 @@ function addEnterKeyHandler(inputId, buttonId) {
     }
 }
 
-// Login Inputs -> Login Button
 addEnterKeyHandler("email", "login-btn");
 addEnterKeyHandler("password", "login-btn");
-
-// Register Inputs -> Register Button
 addEnterKeyHandler("reg-email", "register-btn");
 addEnterKeyHandler("reg-password", "register-btn");
 addEnterKeyHandler("reg-confirm-password", "register-btn");
 
-// ==== Auth Logic ====
+// ==== Auth Logic (Real Firebase Auth) ====
 
 // 1. Login
 document.getElementById("login-btn").addEventListener("click", () => {
@@ -99,11 +97,6 @@ document.getElementById("register-btn").addEventListener("click", () => {
         return;
     }
 
-    if (password.length < 6) {
-        errorEl.innerText = "Password must be at least 6 characters.";
-        return;
-    }
-
     auth.createUserWithEmailAndPassword(email, password)
         .catch(handleAuthError);
 });
@@ -117,21 +110,12 @@ document.getElementById("logout-btn").addEventListener("click", () => {
 function handleAuthError(error) {
     let message = "Authentication failed.";
     switch (error.code) {
-        case "auth/email-already-in-use":
-            message = "This email is already registered.";
-            break;
-        case "auth/invalid-email":
-            message = "Invalid email address format.";
-            break;
-        case "auth/weak-password":
-            message = "Password should be at least 6 characters.";
-            break;
+        case "auth/email-already-in-use": message = "This email is already registered."; break;
+        case "auth/invalid-email": message = "Invalid email address format."; break;
+        case "auth/weak-password": message = "Password should be at least 6 characters."; break;
         case "auth/user-not-found":
-        case "auth/wrong-password":
-            message = "Invalid email or password.";
-            break;
-        default:
-            message = error.message;
+        case "auth/wrong-password": message = "Invalid email or password."; break;
+        default: message = error.message;
     }
     errorEl.innerText = message;
 }
@@ -139,37 +123,33 @@ function handleAuthError(error) {
 // Observe login state
 auth.onAuthStateChanged(user => {
     if (user) {
+        // User is signed in.
         document.getElementById("login-wrapper").style.display = "none";
         document.getElementById("dashboard").style.display = "block";
+        
+        // Start fetching ThingSpeak Data
+        startFetchingData();
     } else {
+        // User is signed out.
         document.getElementById("login-wrapper").style.display = "flex";
         document.getElementById("dashboard").style.display = "none";
 
-        // ==== Reset to Clean Login State ====
-        // 1. Reset View to Login
+        // Reset UI
         loginForm.style.display = "block";
         registerForm.style.display = "none";
         formTitle.innerText = "Smart Bin Login";
         formSubtitle.innerText = "Welcome back! Please login to your account.";
-        
-        // 2. Clear Errors
         errorEl.innerText = "";
-
-        // 3. Clear Input Fields
-        const inputs = document.querySelectorAll("input");
-        inputs.forEach(input => input.value = "");
+        document.querySelectorAll("input").forEach(input => input.value = "");
     }
 });
 
 
 // ==== Notification Setup ====
-const startTime = Date.now(); // Track when dashboard opened to avoid notifying for old logs
+const startTime = Date.now(); 
 
 function requestNotificationPermission() {
-  if (!("Notification" in window)) {
-    console.log("This browser does not support desktop notification");
-    return;
-  }
+  if (!("Notification" in window)) return;
   if (Notification.permission !== "denied") {
     Notification.requestPermission();
   }
@@ -179,18 +159,15 @@ function sendNotification(title, body, icon) {
   if (Notification.permission === "granted") {
     new Notification(title, {
       body: body,
-      icon: icon || "https://cdn-icons-png.flaticon.com/512/1040/1040230.png" // Generic alert icon
+      icon: icon || "https://cdn-icons-png.flaticon.com/512/1040/1040230.png"
     });
   }
 }
 
-// Request permission immediately
 requestNotificationPermission();
 
 // ==== Chart.js Setup ====
 const ctx = document.getElementById('fillChart').getContext('2d');
-
-// Gradient for the chart
 const gradient = ctx.createLinearGradient(0, 0, 0, 400);
 gradient.addColorStop(0, 'rgba(78, 115, 223, 0.5)');
 gradient.addColorStop(1, 'rgba(78, 115, 223, 0.0)');
@@ -200,7 +177,7 @@ const fillChart = new Chart(ctx, {
   data: { 
       labels: [], 
       datasets: [{ 
-          label: 'Fill Level (%)', 
+          label: 'Fill Level (cm)', 
           data: [], 
           borderColor: '#4e73df',
           backgroundColor: gradient,
@@ -208,123 +185,146 @@ const fillChart = new Chart(ctx, {
           pointRadius: 3,
           pointBackgroundColor: '#4e73df',
           fill: true,
-          tension: 0.4 // Smooth curves
+          tension: 0.4 
       }] 
   },
   options: { 
       responsive: true, 
       maintainAspectRatio: false,
-      plugins: {
-          legend: {
-              display: true,
-              position: 'top',
-          }
-      },
+      plugins: { legend: { display: true, position: 'top' } },
       scales: { 
-          y: { 
-              beginAtZero: true, 
-              max: 100,
-              grid: {
-                  borderDash: [2, 2]
-              }
-          },
-          x: {
-              grid: {
-                  display: false
-              }
-          }
+          y: { beginAtZero: true, grid: { borderDash: [2, 2] } },
+          x: { grid: { display: false } }
       } 
   }
 });
 
-// ==== Real-time Firebase Listener ====
-const logsRef = db.ref('Logs'); 
+// ==== ThingSpeak Data Fetching ====
+let lastEntryId = null; // Track the last entry to avoid duplicates
 
-logsRef.limitToLast(50).on('child_added', (snapshot) => {
-  const data = snapshot.val();
-  if (!data) return;
+function startFetchingData() {
+    fetchHistory(); // Load historical data first
+    setInterval(fetchThingSpeak, 16000); // Poll every 16s
+}
 
-  // --- Update UI Elements ---
-  
-  // 1. Fill Level
-  const fillLevel = data.binDistance;
-  const fillEl = document.getElementById('fillLevel');
-  fillEl.innerText = fillLevel + '%';
-  
-  // Color code fill level
-  if(fillLevel > 80) fillEl.className = 'text-danger';
-  else if(fillLevel > 50) fillEl.className = 'text-warning';
-  else fillEl.className = 'text-primary';
+function fetchHistory() {
+    // Fetch last 20 entries to populate chart/logs on load
+    const url = `https://api.thingspeak.com/channels/${THINGSPEAK_CHANNEL_ID}/feeds.json?api_key=${THINGSPEAK_READ_API_KEY}&results=20&timezone=Asia/Kuala_Lumpur`;
 
-  // 2. Lid Status
-  const isLidOpen = data.handDistance <= 15;
-  const lidEl = document.getElementById('lidStatus');
-  const lidIcon = document.getElementById('lidIcon');
-  
-  lidEl.innerText = isLidOpen ? 'OPEN' : 'CLOSED';
-  lidEl.className = isLidOpen ? 'text-warning' : 'text-success';
-  
-  lidIcon.className = isLidOpen ? 'fas fa-door-open' : 'fas fa-door-closed';
-  lidIcon.parentElement.className = isLidOpen ? 'card-icon text-warning' : 'card-icon text-success';
+    fetch(url)
+        .then(response => response.json())
+        .then(data => {
+            if (data.feeds) {
+                data.feeds.forEach(feed => {
+                    updateDashboard(feed);
+                });
+            }
+        })
+        .catch(err => console.error("Error fetching history:", err));
+}
 
-  // 3. Fire Status
-  const isFireDanger = data.flameValue < 400;
-  const fireEl = document.getElementById('fireStatus');
-  const fireIcon = document.getElementById('fireIcon');
+function fetchThingSpeak() {
+    // Fetch the last entry
+    const url = `https://api.thingspeak.com/channels/${THINGSPEAK_CHANNEL_ID}/feeds/last.json?api_key=${THINGSPEAK_READ_API_KEY}&timezone=Asia/Kuala_Lumpur`;
 
-  fireEl.innerText = isFireDanger ? 'DANGER' : 'SAFE';
-  fireEl.className = isFireDanger ? 'text-danger' : 'text-success';
-  
-  fireIcon.className = isFireDanger ? 'fas fa-fire' : 'fas fa-fire-extinguisher';
-  fireIcon.parentElement.className = isFireDanger ? 'card-icon text-danger' : 'card-icon text-success';
+    fetch(url)
+        .then(response => response.json())
+        .then(data => {
+            updateDashboard(data);
+        })
+        .catch(err => console.error("Error fetching ThingSpeak:", err));
+}
 
-  // --- Notifications ---
-  // Only notify for new events (timestamp > startTime)
-  const logTime = new Date(data.timestamp).getTime();
-  
-  if (logTime > startTime) {
-      // Check Fire Status
-      if (isFireDanger) {
-          sendNotification("🔥 FIRE ALERT!", "Fire detected in the Smart Bin! Immediate action required.");
-      }
-      
-      // Check Fill Level (>= 90%)
-      if (fillLevel >= 90) {
-          sendNotification("🗑️ Bin Full Alert", `Fill level is at ${fillLevel}%. Please empty the bin.`);
-      }
-  }
+function updateDashboard(data) {
+    if (!data) return;
 
-  // --- Update Chart ---
-  const timeLabel = new Date(data.timestamp).toLocaleTimeString();
-  
-  // Keep chart from getting too crowded (max 20 points)
-  if (fillChart.data.labels.length > 20) {
-      fillChart.data.labels.shift();
-      fillChart.data.datasets[0].data.shift();
-  }
+    // Prevent duplicate updates if data hasn't changed
+    if (lastEntryId === data.entry_id) return;
+    lastEntryId = data.entry_id;
 
-  fillChart.data.labels.push(timeLabel);
-  fillChart.data.datasets[0].data.push(fillLevel);
-  fillChart.update();
+    // Field Mapping from Arduino:
+    // Field 1: Hand Distance
+    // Field 2: Bin Distance (Fill Level)
+    // Field 3: Flame Value
+    // Field 4: Lid Status (1=OPEN, 0=CLOSED)
+    // Field 5: Bin Status (1=FULL, 0=NOT FULL)
 
-  // --- Update Log Table ---
-  const logRow = document.createElement('tr');
-  const dateStr = new Date(data.timestamp).toLocaleString();
-  const statusBadge = isFireDanger 
-      ? '<span style="background:#e74a3b; color:white; padding:2px 8px; border-radius:4px; font-size:0.8em;">FIRE DETECTED</span>' 
-      : '<span style="background:#1cc88a; color:white; padding:2px 8px; border-radius:4px; font-size:0.8em;">Normal</span>';
-  
-  logRow.innerHTML = `
-      <td>${dateStr}</td>
-      <td>${statusBadge}</td>
-      <td>Flame Value: ${data.flameValue}</td>
-  `;
-  
-  const logBody = document.getElementById('fireLog');
-  logBody.prepend(logRow);
-  
-  // Limit table rows to 10
-  if (logBody.children.length > 10) {
-      logBody.removeChild(logBody.lastChild);
-  }
-});
+    const handDist = parseFloat(data.field1);
+    const binDist  = parseFloat(data.field2);
+    const flameVal = parseFloat(data.field3);
+    const lidState = parseInt(data.field4); // 1 or 0
+    const binState = parseInt(data.field5); // 1 or 0
+    const timestamp = new Date(data.created_at);
+
+    // 1. Fill Level (Bin Distance)
+    // Assuming 20cm is empty and 0cm is full, let's convert to percentage if needed
+    // Or just show raw CM. Let's show CM for now as per Arduino code.
+    const fillEl = document.getElementById('fillLevel');
+    fillEl.innerText = binDist + ' cm';
+    
+    // Color code
+    if(binDist < 5) fillEl.className = 'text-danger'; // Very full
+    else if(binDist < 10) fillEl.className = 'text-warning';
+    else fillEl.className = 'text-primary';
+
+    // 2. Lid Status
+    const isLidOpen = (lidState === 1);
+    const lidEl = document.getElementById('lidStatus');
+    const lidIcon = document.getElementById('lidIcon');
+    
+    lidEl.innerText = isLidOpen ? 'OPEN' : 'CLOSED';
+    lidEl.className = isLidOpen ? 'text-warning' : 'text-success';
+    lidIcon.className = isLidOpen ? 'fas fa-door-open' : 'fas fa-door-closed';
+    lidIcon.parentElement.className = isLidOpen ? 'card-icon text-warning' : 'card-icon text-success';
+
+    // 3. Fire Status
+    const isFireDanger = (flameVal < 400);
+    const fireEl = document.getElementById('fireStatus');
+    const fireIcon = document.getElementById('fireIcon');
+
+    fireEl.innerText = isFireDanger ? 'DANGER' : 'SAFE';
+    fireEl.className = isFireDanger ? 'text-danger' : 'text-success';
+    fireIcon.className = isFireDanger ? 'fas fa-fire' : 'fas fa-fire-extinguisher';
+    fireIcon.parentElement.className = isFireDanger ? 'card-icon text-danger' : 'card-icon text-success';
+
+    // --- Notifications ---
+    if (timestamp.getTime() > startTime) {
+        if (isFireDanger) {
+            sendNotification("🔥 FIRE ALERT!", "Fire detected in the Smart Bin!");
+        }
+        if (binState === 1) { // Bin Full
+            sendNotification("🗑️ Bin Full", "The bin is full. Please empty it.");
+        }
+    }
+
+    // --- Update Chart ---
+    const timeLabel = timestamp.toLocaleTimeString();
+    
+    if (fillChart.data.labels.length > 20) {
+        fillChart.data.labels.shift();
+        fillChart.data.datasets[0].data.shift();
+    }
+
+    fillChart.data.labels.push(timeLabel);
+    fillChart.data.datasets[0].data.push(binDist);
+    fillChart.update();
+
+    // --- Update Log Table ---
+    const logRow = document.createElement('tr');
+    const statusBadge = isFireDanger 
+        ? '<span style="background:#e74a3b; color:white; padding:2px 8px; border-radius:4px; font-size:0.8em;">FIRE DETECTED</span>' 
+        : '<span style="background:#1cc88a; color:white; padding:2px 8px; border-radius:4px; font-size:0.8em;">Normal</span>';
+    
+    logRow.innerHTML = `
+        <td>${timestamp.toLocaleString()}</td>
+        <td>${statusBadge}</td>
+        <td>Flame: ${flameVal} | Bin: ${binDist}cm</td>
+    `;
+    
+    const logBody = document.getElementById('fireLog');
+    logBody.prepend(logRow);
+    
+    if (logBody.children.length > 10) {
+        logBody.removeChild(logBody.lastChild);
+    }
+}
