@@ -149,22 +149,46 @@ auth.onAuthStateChanged(user => {
 const startTime = Date.now(); 
 
 function requestNotificationPermission() {
-  if (!("Notification" in window)) return;
-  if (Notification.permission !== "denied") {
-    Notification.requestPermission();
+  if (!("Notification" in window)) {
+      console.log("Browser does not support notifications.");
+      return;
+  }
+  if (Notification.permission !== "granted" && Notification.permission !== "denied") {
+    Notification.requestPermission().then(permission => {
+        if (permission === "granted") {
+            new Notification("Smart Bin", { body: "Notifications enabled!" });
+        }
+    });
   }
 }
 
+// Request permission on any click (browsers block auto-requests)
+document.addEventListener('click', requestNotificationPermission, { once: true });
+
 function sendNotification(title, body, icon) {
+  console.log("Attempting to notify:", title); // Debug Log
+  
+  if (!("Notification" in window)) {
+      alert(title + "\n" + body); // Fallback for unsupported browsers
+      return;
+  }
+
   if (Notification.permission === "granted") {
     new Notification(title, {
       body: body,
       icon: icon || "https://cdn-icons-png.flaticon.com/512/1040/1040230.png"
     });
+  } else if (Notification.permission !== "denied") {
+      // Try asking one last time
+      Notification.requestPermission().then(permission => {
+          if (permission === "granted") {
+              new Notification(title, { body: body, icon: icon });
+          }
+      });
+  } else {
+      console.log("Notifications are blocked by the user.");
   }
 }
-
-requestNotificationPermission();
 
 // ==== Chart.js Setup ====
 const ctx = document.getElementById('fillChart').getContext('2d');
@@ -177,7 +201,7 @@ const fillChart = new Chart(ctx, {
   data: { 
       labels: [], 
       datasets: [{ 
-          label: 'Fill Level (cm)', 
+          label: 'Trash Level (cm)', 
           data: [], 
           borderColor: '#4e73df',
           backgroundColor: gradient,
@@ -204,7 +228,7 @@ let lastEntryId = null; // Track the last entry to avoid duplicates
 
 function startFetchingData() {
     fetchHistory(); // Load historical data first
-    setInterval(fetchThingSpeak, 16000); // Poll every 16s
+    setInterval(fetchThingSpeak, 2000); // Poll every 3s (Fast updates)
 }
 
 function fetchHistory() {
@@ -216,7 +240,7 @@ function fetchHistory() {
         .then(data => {
             if (data.feeds) {
                 data.feeds.forEach(feed => {
-                    updateDashboard(feed);
+                    updateDashboard(feed, true); // true = isHistory
                 });
             }
         })
@@ -230,12 +254,12 @@ function fetchThingSpeak() {
     fetch(url)
         .then(response => response.json())
         .then(data => {
-            updateDashboard(data);
+            updateDashboard(data, false); // false = isLive
         })
         .catch(err => console.error("Error fetching ThingSpeak:", err));
 }
 
-function updateDashboard(data) {
+function updateDashboard(data, isHistory = false) {
     if (!data) return;
 
     // Prevent duplicate updates if data hasn't changed
@@ -256,15 +280,26 @@ function updateDashboard(data) {
     const binState = parseInt(data.field5); // 1 or 0
     const timestamp = new Date(data.created_at);
 
-    // 1. Fill Level (Bin Distance)
-    // Assuming 20cm is empty and 0cm is full, let's convert to percentage if needed
-    // Or just show raw CM. Let's show CM for now as per Arduino code.
+    // CONSTANT: Total Height of the Bin (from sensor to bottom)
+    // Adjust this value to match your actual bin height!
+    const BIN_HEIGHT = 100; 
+
+    // Calculate Fill Level (Trash Height)
+    // If sensor reads 292cm, and bin is 300cm deep, trash is 8cm high.
+    let trashHeight = BIN_HEIGHT - binDist;
+    if (trashHeight < 0) trashHeight = 0; // Clamp negative values
+
+    // Calculate Percentage
+    let fillPercent = (trashHeight / BIN_HEIGHT) * 100;
+    if (fillPercent > 100) fillPercent = 100;
+
+    // 1. Fill Level Display
     const fillEl = document.getElementById('fillLevel');
-    fillEl.innerText = binDist + ' cm';
+    fillEl.innerText = fillPercent.toFixed(1) + '%'; // Show Percentage
     
-    // Color code
-    if(binDist < 5) fillEl.className = 'text-danger'; // Very full
-    else if(binDist < 10) fillEl.className = 'text-warning';
+    // Color code based on Percentage
+    if(fillPercent > 80) fillEl.className = 'text-danger'; // >80% Full
+    else if(fillPercent > 50) fillEl.className = 'text-warning';
     else fillEl.className = 'text-primary';
 
     // 2. Lid Status
@@ -288,12 +323,23 @@ function updateDashboard(data) {
     fireIcon.parentElement.className = isFireDanger ? 'card-icon text-danger' : 'card-icon text-success';
 
     // --- Notifications ---
-    if (timestamp.getTime() > startTime) {
+    // Only notify for NEW data (not history)
+    if (!isHistory) {
+        console.log("Checking Alerts -> Fire:", isFireDanger, "Bin:", binState);
+        
         if (isFireDanger) {
-            sendNotification("🔥 FIRE ALERT!", "Fire detected in the Smart Bin!");
+            sendNotification(
+                "🔥 FIRE ALERT!", 
+                "Fire detected in the Smart Bin!", 
+                "https://cdn-icons-png.flaticon.com/512/426/426833.png" // Fire Icon
+            );
         }
         if (binState === 1) { // Bin Full
-            sendNotification("🗑️ Bin Full", "The bin is full. Please empty it.");
+            sendNotification(
+                "🗑️ Bin Full", 
+                "The bin is full. Please empty it.", 
+                "https://cdn-icons-png.flaticon.com/512/484/484662.png" // Trash Bin Icon
+            );
         }
     }
 
@@ -306,7 +352,8 @@ function updateDashboard(data) {
     }
 
     fillChart.data.labels.push(timeLabel);
-    fillChart.data.datasets[0].data.push(binDist);
+    fillChart.data.datasets[0].label = 'Trash Level (cm)'; // Update Label
+    fillChart.data.datasets[0].data.push(trashHeight);     // Plot Trash Height
     fillChart.update();
 
     // --- Update Log Table ---
@@ -318,7 +365,7 @@ function updateDashboard(data) {
     logRow.innerHTML = `
         <td>${timestamp.toLocaleString()}</td>
         <td>${statusBadge}</td>
-        <td>Flame: ${flameVal} | Bin: ${binDist}cm</td>
+        <td>Flame: ${flameVal} | Fill: ${fillPercent.toFixed(0)}%</td>
     `;
     
     const logBody = document.getElementById('fireLog');
