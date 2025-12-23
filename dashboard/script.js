@@ -313,7 +313,7 @@ function updateDashboard(data, isHistory = false) {
     lidIcon.parentElement.className = isLidOpen ? 'card-icon text-warning' : 'card-icon text-success';
 
     // 3. Fire Status
-    const isFireDanger = (flameVal < 400);
+    const isFireDanger = (flameVal < 900);
     const fireEl = document.getElementById('fireStatus');
     const fireIcon = document.getElementById('fireIcon');
 
